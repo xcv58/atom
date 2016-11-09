@@ -1,4 +1,3 @@
-_ = require 'underscore-plus'
 scrollbarStyle = require 'scrollbar-style'
 {Range, Point} = require 'text-buffer'
 {CompositeDisposable} = require 'event-kit'
@@ -9,12 +8,12 @@ TextEditorPresenter = require './text-editor-presenter'
 GutterContainerComponent = require './gutter-container-component'
 InputComponent = require './input-component'
 LinesComponent = require './lines-component'
+OffScreenBlockDecorationsComponent = require './off-screen-block-decorations-component'
 ScrollbarComponent = require './scrollbar-component'
 ScrollbarCornerComponent = require './scrollbar-corner-component'
 OverlayManager = require './overlay-manager'
 DOMElementPool = require './dom-element-pool'
 LinesYardstick = require './lines-yardstick'
-BlockDecorationsComponent = require './block-decorations-component'
 LineTopIndex = require 'line-top-index'
 
 module.exports =
@@ -43,7 +42,7 @@ class TextEditorComponent
       @assert domNode?, "TextEditorComponent::domNode was set to null."
       @domNodeValue = domNode
 
-  constructor: ({@editor, @hostElement, @rootElement, @stylesElement, tileSize, @views, @themes, @assert}) ->
+  constructor: ({@editor, @hostElement, tileSize, @views, @themes, @styles, @assert}) ->
     @tileSize = tileSize if tileSize?
     @disposables = new CompositeDisposable
 
@@ -65,11 +64,7 @@ class TextEditorComponent
     @domNode = document.createElement('div')
     @domNode.classList.add('editor-contents--private')
 
-    insertionPoint = document.createElement('content')
-    insertionPoint.setAttribute('select', 'atom-overlay')
-    @domNode.appendChild(insertionPoint)
-    @overlayManager = new OverlayManager(@presenter, @hostElement, @views)
-    @blockDecorationsComponent = new BlockDecorationsComponent(@hostElement, @views, @presenter, @domElementPool)
+    @overlayManager = new OverlayManager(@presenter, @domNode, @views)
 
     @scrollViewNode = document.createElement('div')
     @scrollViewNode.classList.add('scroll-view')
@@ -78,11 +73,11 @@ class TextEditorComponent
     @hiddenInputComponent = new InputComponent
     @scrollViewNode.appendChild(@hiddenInputComponent.getDomNode())
 
-    @linesComponent = new LinesComponent({@presenter, @hostElement, @domElementPool, @assert, @grammars})
+    @linesComponent = new LinesComponent({@presenter, @domElementPool, @assert, @grammars, @views})
     @scrollViewNode.appendChild(@linesComponent.getDomNode())
 
-    if @blockDecorationsComponent?
-      @linesComponent.getDomNode().appendChild(@blockDecorationsComponent.getDomNode())
+    @offScreenBlockDecorationsComponent = new OffScreenBlockDecorationsComponent({@presenter, @views})
+    @scrollViewNode.appendChild(@offScreenBlockDecorationsComponent.getDomNode())
 
     @linesYardstick = new LinesYardstick(@editor, @linesComponent, lineTopIndex)
     @presenter.setLinesYardstick(@linesYardstick)
@@ -99,9 +94,9 @@ class TextEditorComponent
     @observeEditor()
     @listenForDOMEvents()
 
-    @disposables.add @stylesElement.onDidAddStyleElement @onStylesheetsChanged
-    @disposables.add @stylesElement.onDidUpdateStyleElement @onStylesheetsChanged
-    @disposables.add @stylesElement.onDidRemoveStyleElement @onStylesheetsChanged
+    @disposables.add @styles.onDidAddStyleElement @onStylesheetsChanged
+    @disposables.add @styles.onDidUpdateStyleElement @onStylesheetsChanged
+    @disposables.add @styles.onDidRemoveStyleElement @onStylesheetsChanged
     unless @themes.isInitialLoadComplete()
       @disposables.add @themes.onDidChangeActiveThemes @onAllThemesLoaded
     @disposables.add scrollbarStyle.onDidChangePreferredScrollbarStyle @refreshScrollbars
@@ -166,8 +161,8 @@ class TextEditorComponent
       @gutterContainerComponent = null
 
     @hiddenInputComponent.updateSync(@newState)
+    @offScreenBlockDecorationsComponent.updateSync(@newState)
     @linesComponent.updateSync(@newState)
-    @blockDecorationsComponent?.updateSync(@newState)
     @horizontalScrollbarComponent.updateSync(@newState)
     @verticalScrollbarComponent.updateSync(@newState)
     @scrollbarCornerComponent.updateSync(@newState)
@@ -187,7 +182,8 @@ class TextEditorComponent
 
   readAfterUpdateSync: =>
     @overlayManager?.measureOverlays()
-    @blockDecorationsComponent?.measureBlockDecorations() if @isVisible()
+    @linesComponent.measureBlockDecorations()
+    @offScreenBlockDecorationsComponent.measureBlockDecorations()
 
   mountGutterContainerComponent: ->
     @gutterContainerComponent = new GutterContainerComponent({@editor, @onLineNumberGutterMouseDown, @domElementPool, @views})
@@ -195,6 +191,10 @@ class TextEditorComponent
 
   becameVisible: ->
     @updatesPaused = true
+    # Always invalidate LinesYardstick measurements when the editor becomes
+    # visible again, because content might have been reflowed and measurements
+    # could be outdated.
+    @invalidateMeasurements()
     @measureScrollbars() if @measureScrollbarsWhenShown
     @sampleFontStyling()
     @sampleBackgroundColors()
@@ -338,8 +338,6 @@ class TextEditorComponent
 
     @scopedConfigDisposables = new CompositeDisposable
     @disposables.add(@scopedConfigDisposables)
-
-    scope = @editor.getRootScopeDescriptor()
 
   focused: ->
     if @mounted
@@ -968,9 +966,7 @@ class TextEditorComponent
   updateParentViewFocusedClassIfNeeded: ->
     if @oldState.focused isnt @newState.focused
       @hostElement.classList.toggle('is-focused', @newState.focused)
-      @rootElement.classList.toggle('is-focused', @newState.focused)
       @oldState.focused = @newState.focused
 
   updateParentViewMiniClass: ->
     @hostElement.classList.toggle('mini', @editor.isMini())
-    @rootElement.classList.toggle('mini', @editor.isMini())

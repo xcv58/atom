@@ -18,7 +18,12 @@ module.exports = function () {
     'app-bundle-id': 'com.github.atom',
     'app-copyright': `Copyright © 2014-${(new Date()).getFullYear()} GitHub, Inc. All rights reserved.`,
     'app-version': CONFIG.appMetadata.version,
-    'arch': process.platform === 'win32' ? 'ia32' : 'x64',
+    'arch': (() => {
+      if (process.platform === 'linux') {
+        return process.arch
+      } else {
+        return process.platform === 'win32' ? 'ia32' : 'x64'
+      }})(),
     'asar': {unpack: buildAsarUnpackGlobExpression()},
     'build-version': CONFIG.appMetadata.version,
     'download': {cache: CONFIG.electronDownloadPath},
@@ -73,11 +78,8 @@ function copyNonASARResources (packagedAppPath, bundledResourcesPath) {
   } else if (process.platform === 'linux') {
     fs.copySync(path.join(CONFIG.repositoryRootPath, 'resources', 'app-icons', CONFIG.channel, 'png', '1024.png'), path.join(packagedAppPath, 'atom.png'))
   } else if (process.platform === 'win32') {
-    fs.copySync(path.join('resources', 'win', 'atom.cmd'), path.join(bundledResourcesPath, 'cli', 'atom.cmd'))
-    fs.copySync(path.join('resources', 'win', 'atom.sh'), path.join(bundledResourcesPath, 'cli', 'atom.sh'))
-    fs.copySync(path.join('resources', 'win', 'atom.js'), path.join(bundledResourcesPath, 'cli', 'atom.js'))
-    fs.copySync(path.join('resources', 'win', 'apm.cmd'), path.join(bundledResourcesPath, 'cli', 'apm.cmd'))
-    fs.copySync(path.join('resources', 'win', 'apm.sh'), path.join(bundledResourcesPath, 'cli', 'apm.sh'))
+    [ 'atom.cmd', 'atom.sh', 'atom.js', 'apm.cmd', 'apm.sh', 'file.ico' ]
+      .forEach(file => fs.copySync(path.join('resources', 'win', file), path.join(bundledResourcesPath, 'cli', file)))
   }
 
   console.log(`Writing LICENSE.md to ${bundledResourcesPath}`)

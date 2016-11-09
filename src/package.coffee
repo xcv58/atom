@@ -6,6 +6,7 @@ CSON = require 'season'
 fs = require 'fs-plus'
 {Emitter, CompositeDisposable} = require 'event-kit'
 
+CompileCache = require './compile-cache'
 ModuleCache = require './module-cache'
 ScopedProperties = require './scoped-properties'
 BufferedProcess = require './buffered-process'
@@ -85,6 +86,8 @@ class Package
         @loadMenus()
         @loadStylesheets()
         @registerDeserializerMethods()
+        @activateCoreStartupServices()
+        @registerTranspilerConfig()
         @configSchemaRegisteredOnLoad = @registerConfigSchemaFromMetadata()
         @settingsPromise = @loadSettings()
         if @shouldRequireMainModuleOnLoad() and not @mainModule?
@@ -92,6 +95,9 @@ class Package
       catch error
         @handleError("Failed to load the #{@name} package", error)
     this
+
+  unload: ->
+    @unregisterTranspilerConfig()
 
   shouldRequireMainModuleOnLoad: ->
     not (
@@ -246,11 +252,19 @@ class Package
           @activationDisposables.add @packageManager.serviceHub.consume(name, version, @mainModule[methodName].bind(@mainModule))
     return
 
+  registerTranspilerConfig: ->
+    if @metadata.atomTranspilers
+      CompileCache.addTranspilerConfigForPath(@path, @name, @metadata, @metadata.atomTranspilers)
+
+  unregisterTranspilerConfig: ->
+    if @metadata.atomTranspilers
+      CompileCache.removeTranspilerConfigForPath(@path)
+
   loadKeymaps: ->
     if @bundledPackage and @packageManager.packagesCache[@name]?
       @keymaps = (["#{@packageManager.resourcePath}#{path.sep}#{keymapPath}", keymapObject] for keymapPath, keymapObject of @packageManager.packagesCache[@name].keymaps)
     else
-      @keymaps = @getKeymapPaths().map (keymapPath) -> [keymapPath, CSON.readFileSync(keymapPath) ? {}]
+      @keymaps = @getKeymapPaths().map (keymapPath) -> [keymapPath, CSON.readFileSync(keymapPath, allowDuplicateKeys: false) ? {}]
     return
 
   loadMenus: ->
@@ -289,6 +303,15 @@ class Package
             @requireMainModule()
             @mainModule[methodName](state, atomEnvironment)
       return
+
+  activateCoreStartupServices: ->
+    if directoryProviderService = @metadata.providedServices?['atom.directory-provider']
+      @requireMainModule()
+      servicesByVersion = {}
+      for version, methodName of directoryProviderService.versions
+        if typeof @mainModule[methodName] is 'function'
+          servicesByVersion[version] = @mainModule[methodName]()
+      @packageManager.serviceHub.provide('atom.directory-provider', servicesByVersion)
 
   registerViewProviders: ->
     if @metadata.viewProviders? and not @registeredViewProviders
@@ -412,8 +435,6 @@ class Package
     @settingsActivated = false
 
   reloadStylesheets: ->
-    oldSheets = _.clone(@stylesheets)
-
     try
       @loadStylesheets()
     catch error

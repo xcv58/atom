@@ -36,6 +36,13 @@
       { label: 'New File', command: 'application:new-file' }
       { label: 'Open…', command: 'application:open' }
       { label: 'Add Project Folder…', command: 'application:add-project-folder' }
+      {
+        label: 'Reopen Project',
+        submenu: [
+          { label: 'Clear Project History', command: 'application:clear-project-history' }
+          { type: 'separator' }
+        ]
+      }
       { label: 'Reopen Last Item', command: 'pane:reopen-closed-item' }
       { type: 'separator' }
       { label: 'Save', command: 'core:save' }
@@ -147,6 +154,7 @@
           { label: 'Open In Dev Mode…', command: 'application:open-dev' }
           { label: 'Reload Window', command: 'window:reload' }
           { label: 'Run Package Specs', command: 'window:run-package-specs' }
+          { label: 'Run Benchmarks', command: 'window:run-benchmarks' }
           { label: 'Toggle Developer Tools', command: 'window:toggle-dev-tools' }
         ]
       }

@@ -1,6 +1,7 @@
 {ipcRenderer} = require 'electron'
 path = require 'path'
 temp = require('temp').track()
+{Disposable} = require 'event-kit'
 
 describe "WorkspaceElement", ->
   describe "when the workspace element is focused", ->
@@ -17,9 +18,11 @@ describe "WorkspaceElement", ->
     it "has a class based on the style of the scrollbar", ->
       observeCallback = null
       scrollbarStyle = require 'scrollbar-style'
-      spyOn(scrollbarStyle, 'observePreferredScrollbarStyle').andCallFake (cb) -> observeCallback = cb
-      workspaceElement = atom.views.getView(atom.workspace)
+      spyOn(scrollbarStyle, 'observePreferredScrollbarStyle').andCallFake (cb) ->
+        observeCallback = cb
+        new Disposable(->)
 
+      workspaceElement = atom.views.getView(atom.workspace)
       observeCallback('legacy')
       expect(workspaceElement.className).toMatch 'scrollbars-visible-always'
 
@@ -48,12 +51,12 @@ describe "WorkspaceElement", ->
     it "updates the font-family based on the 'editor.fontFamily' config value", ->
       initialCharWidth = editor.getDefaultCharWidth()
       fontFamily = atom.config.get('editor.fontFamily')
-      fontFamily += ", 'Apple Color Emoji'" if process.platform is 'darwin'
+      fontFamily += ', "Apple Color Emoji"' if process.platform is 'darwin'
       expect(getComputedStyle(editorElement).fontFamily).toBe fontFamily
 
       atom.config.set('editor.fontFamily', 'sans-serif')
       fontFamily = atom.config.get('editor.fontFamily')
-      fontFamily += ", 'Apple Color Emoji'" if process.platform is 'darwin'
+      fontFamily += ', "Apple Color Emoji"' if process.platform is 'darwin'
       expect(getComputedStyle(editorElement).fontFamily).toBe fontFamily
       expect(editor.getDefaultCharWidth()).not.toBe initialCharWidth
 

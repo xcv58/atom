@@ -1,6 +1,4 @@
-fs = require 'fs-plus'
 path = require 'path'
-temp = require 'temp'
 clipboard = require '../src/safe-clipboard'
 TextEditor = require '../src/text-editor'
 TextBuffer = require 'text-buffer'
@@ -56,7 +54,6 @@ describe "TextEditor", ->
       # reusing the same buffer instance
       editor2 = TextEditor.deserialize(editor.serialize(), {
         assert: atom.assert,
-        clipboard: atom.clipboard,
         textEditors: atom.textEditors,
         project: {
           bufferForIdSync: (id) -> TextBuffer.deserialize(editor.buffer.serialize())
@@ -4338,6 +4335,13 @@ describe "TextEditor", ->
           editor.toggleLineCommentsInSelection()
           expect(buffer.lineForRow(4)).toBe "    while(items.length > 0) {"
 
+      it "does nothing for empty lines and null grammar", ->
+        runs ->
+          editor.setGrammar(atom.grammars.grammarForScopeName('text.plain.null-grammar'))
+          editor.setCursorBufferPosition([10, 0])
+          editor.toggleLineCommentsInSelection()
+          expect(editor.buffer.lineForRow(10)).toBe ""
+
       it "uncomments when the line lacks the trailing whitespace in the comment regex", ->
         editor.setCursorBufferPosition([10, 0])
         editor.toggleLineCommentsInSelection()
@@ -4751,7 +4755,7 @@ describe "TextEditor", ->
     it "deletes the entire file from the bottom up", ->
       count = buffer.getLineCount()
       expect(count).toBeGreaterThan(0)
-      for line in [0...count]
+      for [0...count]
         editor.getLastCursor().moveToBottom()
         editor.deleteLine()
       expect(buffer.getLineCount()).toBe(1)
@@ -4760,7 +4764,7 @@ describe "TextEditor", ->
     it "deletes the entire file from the top down", ->
       count = buffer.getLineCount()
       expect(count).toBeGreaterThan(0)
-      for line in [0...count]
+      for [0...count]
         editor.getLastCursor().moveToTop()
         editor.deleteLine()
       expect(buffer.getLineCount()).toBe(1)
@@ -4877,6 +4881,11 @@ describe "TextEditor", ->
       editor.onDidChange(changeHandler)
       editor.setTabLength(6)
       expect(changeHandler).not.toHaveBeenCalled()
+
+    it 'does not change its tab length when the given tab length is null', ->
+      editor.setTabLength(4)
+      editor.setTabLength(null)
+      expect(editor.getTabLength()).toBe(4)
 
   describe ".indentLevelForLine(line)", ->
     it "returns the indent level when the line has only leading whitespace", ->
@@ -5171,11 +5180,15 @@ describe "TextEditor", ->
       expect(editor.getSelectedBufferRange()).toEqual [[13, 0], [14, 2]]
 
   describe ".shouldPromptToSave()", ->
-    it "returns false when an edit session's buffer is in use by more than one session", ->
+    it "returns true when buffer changed", ->
       jasmine.unspy(editor, 'shouldPromptToSave')
       expect(editor.shouldPromptToSave()).toBeFalsy()
       buffer.setText('changed')
       expect(editor.shouldPromptToSave()).toBeTruthy()
+
+    it "returns false when an edit session's buffer is in use by more than one session", ->
+      jasmine.unspy(editor, 'shouldPromptToSave')
+      buffer.setText('changed')
 
       editor2 = null
       waitsForPromise ->
@@ -5186,6 +5199,16 @@ describe "TextEditor", ->
         expect(editor.shouldPromptToSave()).toBeFalsy()
         editor2.destroy()
         expect(editor.shouldPromptToSave()).toBeTruthy()
+
+    it "returns false when close of a window requested and edit session opened inside project", ->
+      jasmine.unspy(editor, 'shouldPromptToSave')
+      buffer.setText('changed')
+      expect(editor.shouldPromptToSave(windowCloseRequested: true, projectHasPaths: true)).toBeFalsy()
+
+    it "returns true when close of a window requested and edit session opened without project", ->
+      jasmine.unspy(editor, 'shouldPromptToSave')
+      buffer.setText('changed')
+      expect(editor.shouldPromptToSave(windowCloseRequested: true, projectHasPaths: false)).toBeTruthy()
 
   describe "when the editor contains surrogate pair characters", ->
     it "correctly backspaces over them", ->
@@ -5319,8 +5342,8 @@ describe "TextEditor", ->
 
           tokens = editor.tokensForScreenRow(0)
           expect(tokens).toEqual [
-            {text: '//', scopes: ['source.js', 'comment.line.double-slash.js', 'punctuation.definition.comment.js']},
-            {text: ' http://github.com', scopes: ['source.js', 'comment.line.double-slash.js']}
+            {text: '//', scopes: ['syntax--source.syntax--js', 'syntax--comment.syntax--line.syntax--double-slash.syntax--js', 'syntax--punctuation.syntax--definition.syntax--comment.syntax--js']},
+            {text: ' http://github.com', scopes: ['syntax--source.syntax--js', 'syntax--comment.syntax--line.syntax--double-slash.syntax--js']}
           ]
 
         waitsForPromise ->
@@ -5329,9 +5352,9 @@ describe "TextEditor", ->
         runs ->
           tokens = editor.tokensForScreenRow(0)
           expect(tokens).toEqual [
-            {text: '//', scopes: ['source.js', 'comment.line.double-slash.js', 'punctuation.definition.comment.js']},
-            {text: ' ', scopes: ['source.js', 'comment.line.double-slash.js']}
-            {text: 'http://github.com', scopes: ['source.js', 'comment.line.double-slash.js', 'markup.underline.link.http.hyperlink']}
+            {text: '//', scopes: ['syntax--source.syntax--js', 'syntax--comment.syntax--line.syntax--double-slash.syntax--js', 'syntax--punctuation.syntax--definition.syntax--comment.syntax--js']},
+            {text: ' ', scopes: ['syntax--source.syntax--js', 'syntax--comment.syntax--line.syntax--double-slash.syntax--js']}
+            {text: 'http://github.com', scopes: ['syntax--source.syntax--js', 'syntax--comment.syntax--line.syntax--double-slash.syntax--js', 'syntax--markup.syntax--underline.syntax--link.syntax--http.syntax--hyperlink']}
           ]
 
       describe "when the grammar is updated", ->
@@ -5344,8 +5367,8 @@ describe "TextEditor", ->
 
             tokens = editor.tokensForScreenRow(0)
             expect(tokens).toEqual [
-              {text: '//', scopes: ['source.js', 'comment.line.double-slash.js', 'punctuation.definition.comment.js']},
-              {text: ' SELECT * FROM OCTOCATS', scopes: ['source.js', 'comment.line.double-slash.js']}
+              {text: '//', scopes: ['syntax--source.syntax--js', 'syntax--comment.syntax--line.syntax--double-slash.syntax--js', 'syntax--punctuation.syntax--definition.syntax--comment.syntax--js']},
+              {text: ' SELECT * FROM OCTOCATS', scopes: ['syntax--source.syntax--js', 'syntax--comment.syntax--line.syntax--double-slash.syntax--js']}
             ]
 
           waitsForPromise ->
@@ -5354,8 +5377,8 @@ describe "TextEditor", ->
           runs ->
             tokens = editor.tokensForScreenRow(0)
             expect(tokens).toEqual [
-              {text: '//', scopes: ['source.js', 'comment.line.double-slash.js', 'punctuation.definition.comment.js']},
-              {text: ' SELECT * FROM OCTOCATS', scopes: ['source.js', 'comment.line.double-slash.js']}
+              {text: '//', scopes: ['syntax--source.syntax--js', 'syntax--comment.syntax--line.syntax--double-slash.syntax--js', 'syntax--punctuation.syntax--definition.syntax--comment.syntax--js']},
+              {text: ' SELECT * FROM OCTOCATS', scopes: ['syntax--source.syntax--js', 'syntax--comment.syntax--line.syntax--double-slash.syntax--js']}
             ]
 
           waitsForPromise ->
@@ -5364,14 +5387,14 @@ describe "TextEditor", ->
           runs ->
             tokens = editor.tokensForScreenRow(0)
             expect(tokens).toEqual [
-              {text: '//', scopes: ['source.js', 'comment.line.double-slash.js', 'punctuation.definition.comment.js']},
-              {text: ' ', scopes: ['source.js', 'comment.line.double-slash.js']},
-              {text: 'SELECT', scopes: ['source.js', 'comment.line.double-slash.js', 'keyword.other.DML.sql']},
-              {text: ' ', scopes: ['source.js', 'comment.line.double-slash.js']},
-              {text: '*', scopes: ['source.js', 'comment.line.double-slash.js', 'keyword.operator.star.sql']},
-              {text: ' ', scopes: ['source.js', 'comment.line.double-slash.js']},
-              {text: 'FROM', scopes: ['source.js', 'comment.line.double-slash.js', 'keyword.other.DML.sql']},
-              {text: ' OCTOCATS', scopes: ['source.js', 'comment.line.double-slash.js']}
+              {text: '//', scopes: ['syntax--source.syntax--js', 'syntax--comment.syntax--line.syntax--double-slash.syntax--js', 'syntax--punctuation.syntax--definition.syntax--comment.syntax--js']},
+              {text: ' ', scopes: ['syntax--source.syntax--js', 'syntax--comment.syntax--line.syntax--double-slash.syntax--js']},
+              {text: 'SELECT', scopes: ['syntax--source.syntax--js', 'syntax--comment.syntax--line.syntax--double-slash.syntax--js', 'syntax--keyword.syntax--other.syntax--DML.syntax--sql']},
+              {text: ' ', scopes: ['syntax--source.syntax--js', 'syntax--comment.syntax--line.syntax--double-slash.syntax--js']},
+              {text: '*', scopes: ['syntax--source.syntax--js', 'syntax--comment.syntax--line.syntax--double-slash.syntax--js', 'syntax--keyword.syntax--operator.syntax--star.syntax--sql']},
+              {text: ' ', scopes: ['syntax--source.syntax--js', 'syntax--comment.syntax--line.syntax--double-slash.syntax--js']},
+              {text: 'FROM', scopes: ['syntax--source.syntax--js', 'syntax--comment.syntax--line.syntax--double-slash.syntax--js', 'syntax--keyword.syntax--other.syntax--DML.syntax--sql']},
+              {text: ' OCTOCATS', scopes: ['syntax--source.syntax--js', 'syntax--comment.syntax--line.syntax--double-slash.syntax--js']}
             ]
 
   describe ".normalizeTabsInBufferRange()", ->
@@ -5522,7 +5545,7 @@ describe "TextEditor", ->
 
   describe "auto height", ->
     it "returns true by default but can be customized", ->
-      editor = atom.workspace.buildTextEditor()
+      editor = new TextEditor
       expect(editor.getAutoHeight()).toBe(true)
       editor.update({autoHeight: false})
       expect(editor.getAutoHeight()).toBe(false)
@@ -5540,10 +5563,10 @@ describe "TextEditor", ->
 
   describe '.get/setPlaceholderText()', ->
     it 'can be created with placeholderText', ->
-      newEditor = atom.workspace.buildTextEditor(
+      newEditor = new TextEditor({
         mini: true
         placeholderText: 'yep'
-      )
+      })
       expect(newEditor.getPlaceholderText()).toBe 'yep'
 
     it 'models placeholderText and emits an event when changed', ->
@@ -5806,20 +5829,20 @@ describe "TextEditor", ->
 
       editor.update({showIndentGuide: false})
       expect(editor.tokensForScreenRow(0)).toEqual [
-        {text: '  ', scopes: ['source.js', 'leading-whitespace']},
-        {text: 'foo', scopes: ['source.js']}
+        {text: '  ', scopes: ['syntax--source.syntax--js', 'leading-whitespace']},
+        {text: 'foo', scopes: ['syntax--source.syntax--js']}
       ]
 
       editor.update({showIndentGuide: true})
       expect(editor.tokensForScreenRow(0)).toEqual [
-        {text: '  ', scopes: ['source.js', 'leading-whitespace indent-guide']},
-        {text: 'foo', scopes: ['source.js']}
+        {text: '  ', scopes: ['syntax--source.syntax--js', 'leading-whitespace indent-guide']},
+        {text: 'foo', scopes: ['syntax--source.syntax--js']}
       ]
 
       editor.setMini(true)
       expect(editor.tokensForScreenRow(0)).toEqual [
-        {text: '  ', scopes: ['source.js', 'leading-whitespace']},
-        {text: 'foo', scopes: ['source.js']}
+        {text: '  ', scopes: ['syntax--source.syntax--js', 'leading-whitespace']},
+        {text: 'foo', scopes: ['syntax--source.syntax--js']}
       ]
 
   describe "when the editor is constructed with the grammar option set", ->
@@ -5828,11 +5851,7 @@ describe "TextEditor", ->
         atom.packages.activatePackage('language-coffee-script')
 
     it "sets the grammar", ->
-      editor = new TextEditor({
-        grammar: atom.grammars.grammarForScopeName('source.coffee')
-        clipboard: atom.clipboard
-      })
-
+      editor = new TextEditor({grammar: atom.grammars.grammarForScopeName('source.coffee')})
       expect(editor.getGrammar().name).toBe 'CoffeeScript'
 
   describe "softWrapAtPreferredLineLength", ->

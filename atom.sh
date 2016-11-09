@@ -15,6 +15,8 @@ else
   BETA_VERSION=
 fi
 
+export ATOM_DISABLE_SHELLING_OUT_FOR_ENVIRONMENT=true
+
 while getopts ":wtfvh-:" opt; do
   case "$opt" in
     -)
@@ -26,7 +28,7 @@ while getopts ":wtfvh-:" opt; do
           REDIRECT_STDERR=1
           EXPECT_OUTPUT=1
           ;;
-        foreground|test)
+        foreground|benchmark|benchmark-test|test)
           EXPECT_OUTPUT=1
           ;;
       esac
